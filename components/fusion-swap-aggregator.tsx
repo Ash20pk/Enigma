@@ -1,45 +1,46 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAccount, useChainId, useBalance } from 'wagmi';
+import { useAccount, useBalance, useChainId, useSignTypedData, useWalletClient } from 'wagmi';
+import { formatUnits, parseUnits } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  ArrowDownUp, 
-  Zap, 
-  Globe, 
-  TrendingUp, 
-  Shield, 
-  Settings,
-  ChevronDown,
-  AlertTriangle,
-  Loader2
-} from 'lucide-react';
-import { Token, QuoteResponse, oneInchService } from '@/lib/1inch';
-import { TokenSelector } from '@/components/token-selector';
-import ProtocolFlowDiagram from '@/components/protocol-flow-diagram';
+import { ArrowDownUp, Zap, Shield, Clock, TrendingUp, AlertCircle, RefreshCw, Info, Settings, Loader2, AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { TokenSelector } from './token-selector';
+import { signFusionOrder, prepareFusionOrderForSigning, submitSignedFusionOrder } from '@/lib/fusion-signing';
 
-interface SwapRoute {
-  protocol: 'classic' | 'fusion' | 'fusion-plus';
-  name: string;
+import { Token } from '@/lib/1inch';
+
+interface FusionQuote {
   dstAmount: string;
-  estimatedGas: string;
-  executionTime: string;
-  mevProtection: boolean;
-  gasless: boolean;
-  crossChain: boolean;
-  savings?: string;
-  confidence: number;
-  protocols?: string[];
+  srcToken: {
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+  };
+  dstToken: {
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+  };
+  gas: number;
+  quoteId: string;
+  presets: any[];
+  recommendedPreset: number;
 }
 
-export default function UnifiedSwapAggregator() {
+export default function FusionSwapAggregator() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId() || 1;
+  const { data: walletClient } = useWalletClient();
+  const { signTypedDataAsync } = useSignTypedData();
   
   // State management
   const [orderType, setOrderType] = useState<'market' | 'limit'>('market');
@@ -51,11 +52,8 @@ export default function UnifiedSwapAggregator() {
   const [deadline, setDeadline] = useState('20');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [routes, setRoutes] = useState<SwapRoute[]>([]);
-  const [selectedRoute, setSelectedRoute] = useState<SwapRoute | null>(null);
-  const [quoteData, setQuoteData] = useState<QuoteResponse | null>(null);
+  const [fusionQuote, setFusionQuote] = useState<FusionQuote | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showProtocolDiagram, setShowProtocolDiagram] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
 
   // Balance fetching
@@ -123,12 +121,11 @@ export default function UnifiedSwapAggregator() {
     }
   }, []);
 
-  // Fetch quote when inputs change
+  // Fetch Fusion quote when inputs change
   useEffect(() => {
-    const fetchQuote = async () => {
-      if (!fromAmount || !fromToken || !toToken || !isConnected) {
-        setRoutes([]);
-        setSelectedRoute(null);
+    const fetchFusionQuote = async () => {
+      if (!fromAmount || !fromToken || !toToken || !isConnected || !address) {
+        setFusionQuote(null);
         setToAmount('');
         return;
       }
@@ -136,8 +133,7 @@ export default function UnifiedSwapAggregator() {
       // Don't fetch quote for zero or invalid amounts
       const numericAmount = parseFloat(fromAmount);
       if (isNaN(numericAmount) || numericAmount <= 0) {
-        setRoutes([]);
-        setSelectedRoute(null);
+        setFusionQuote(null);
         setToAmount('');
         return;
       }
@@ -154,64 +150,34 @@ export default function UnifiedSwapAggregator() {
         // Convert amount to wei (considering token decimals)
         const amountInWei = (parseFloat(fromAmount) * Math.pow(10, fromToken.decimals)).toString();
         
-        // Get quote from 1inch API
-        const quote = await oneInchService.getQuote(
-          chainId,
-          fromToken.address,
-          toToken.address,
-          amountInWei
-        );
+        // Get Fusion quote
+        const response = await fetch('/api/1inch/fusion/quote', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            fromTokenAddress: fromToken.address,
+            toTokenAddress: toToken.address,
+            amount: amountInWei,
+            walletAddress: address,
+            chainId: chainId
+          })
+        });
 
-        setQuoteData(quote);
+        if (!response.ok) {
+          throw new Error(`Failed to get quote: ${response.statusText}`);
+        }
+
+        const quote: FusionQuote = await response.json();
+        setFusionQuote(quote);
         
         // Convert the response amount back to readable format
         const outputAmount = (parseInt(quote.dstAmount) / Math.pow(10, toToken.decimals)).toFixed(6);
         setToAmount(outputAmount);
 
-        // Extract protocol names from the nested structure
-        const protocolNames = quote.protocols
-          .flat(2)
-          .map(protocol => protocol.name)
-          .filter((name, index, array) => array.indexOf(name) === index); // Remove duplicates
-
-        // Calculate estimated gas cost in USD (rough estimation: gas * 20 gwei * ETH price)
-        const estimatedGasCost = `$${(quote.gas / 1e9 * 20).toFixed(2)}`;
-
-        // Create routes based on the quote response
-        const classicRoute: SwapRoute = {
-          protocol: 'classic',
-          name: 'Classic Swap',
-          dstAmount: outputAmount,
-          estimatedGas: estimatedGasCost,
-          executionTime: '~15s',
-          mevProtection: false,
-          gasless: false,
-          crossChain: false,
-          confidence: 95,
-          protocols: protocolNames
-        };
-
-        // Simulate Fusion route (with slight reduction for MEV protection cost)
-        const fusionRoute: SwapRoute = {
-          protocol: 'fusion',
-          name: 'Fusion (MEV Protected)',
-          dstAmount: (parseFloat(outputAmount) * 0.998).toFixed(6), // Slightly less due to MEV protection
-          estimatedGas: 'Gas-free',
-          executionTime: '~30s',
-          mevProtection: true,
-          gasless: true,
-          crossChain: false,
-          savings: estimatedGasCost,
-          confidence: 92,
-          protocols: ['Fusion Network']
-        };
-
-        const newRoutes = [fusionRoute, classicRoute];
-        setRoutes(newRoutes);
-        setSelectedRoute(newRoutes[0]); // Default to Fusion for better UX
-
       } catch (err: any) {
-        console.error('Error fetching quote:', err);
+        console.error('Error fetching Fusion quote:', err);
         
         // Implement retry logic for transient errors
         if (retryCount < 2 && (err.message?.includes('network') || err.message?.includes('timeout'))) {
@@ -223,9 +189,8 @@ export default function UnifiedSwapAggregator() {
           return;
         }
         
-        setError(err.message || 'Failed to get quote. Please try again.');
-        setRoutes([]);
-        setSelectedRoute(null);
+        setError(err.message || 'Failed to get Fusion quote. Please try again.');
+        setFusionQuote(null);
         setToAmount('');
         setRetryCount(0);
       } finally {
@@ -234,9 +199,9 @@ export default function UnifiedSwapAggregator() {
     };
 
     // Debounce the API call
-    const timeoutId = setTimeout(fetchQuote, 500);
+    const timeoutId = setTimeout(fetchFusionQuote, 500);
     return () => clearTimeout(timeoutId);
-  }, [fromAmount, fromToken, toToken, chainId, isConnected]);
+  }, [fromAmount, fromToken, toToken, chainId, isConnected, address, retryCount]);
 
   const handleSwapTokens = useCallback(() => {
     const tempToken = fromToken;
@@ -248,7 +213,7 @@ export default function UnifiedSwapAggregator() {
   }, [fromToken, toToken, fromAmount, toAmount]);
 
   const handleExecuteSwap = useCallback(async () => {
-    if (!selectedRoute || !fromToken || !toToken || !address || !quoteData) {
+    if (!fusionQuote || !fromToken || !toToken || !address) {
       setError('Missing required data for swap execution');
       return;
     }
@@ -260,49 +225,105 @@ export default function UnifiedSwapAggregator() {
       // Convert amount to wei
       const amountInWei = (parseFloat(fromAmount) * Math.pow(10, fromToken.decimals)).toString();
       
-      if (selectedRoute.protocol === 'fusion') {
-        // Use Fusion SDK for MEV-protected swaps
-        const { fusionService } = await import('@/lib/fusion');
-        const fusionOrder = await fusionService.createOrder({
+      // Step 1: Create Fusion order (unsigned)
+      console.log('🔄 Creating Fusion order...');
+      const createResponse = await fetch('/api/1inch/fusion/swap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           fromTokenAddress: fromToken.address,
           toTokenAddress: toToken.address,
           amount: amountInWei,
           walletAddress: address,
-        });
-        console.log('Fusion order created:', fusionOrder);
-        
-        // Submit the order
-        const orderHash = await fusionService.submitOrder(
-          fusionOrder.order,
-          fusionOrder.quoteId,
-          chainId
-        );
-        console.log('Fusion order submitted:', orderHash);
-      } else {
-        // Use classic swap
-        const swapData = await oneInchService.getSwap(
-          chainId,
-          fromToken.address,
-          toToken.address,
-          amountInWei,
-          address,
-          parseFloat(slippage)
-        );
-        console.log('Classic swap data:', swapData);
-        // Here you would execute the transaction using wagmi/viem
+          chainId: chainId
+        })
+      });
+
+      if (!createResponse.ok) {
+        const errorData = await createResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to create order: ${createResponse.statusText}`);
+      }
+
+      const orderData = await createResponse.json();
+      console.log('✅ Fusion order created:', orderData);
+      
+      // Step 2: Debug wallet client availability
+      console.log('🔍 Debugging wallet state:', {
+        hasWalletClient: !!walletClient,
+        isConnected,
+        address,
+        chainId
+      });
+      
+      if (!walletClient) {
+        console.error('❌ Wallet client not available');
+        throw new Error('Wallet client not available. Please ensure your wallet is connected.');
       }
       
-      // Reset form after successful swap
+      // Step 3: Extract and validate order details
+      console.log('📦 Order data received:', orderData);
+      const { order, quoteId } = orderData;
+      
+      if (!order) {
+        console.error('❌ No order in response:', orderData);
+        throw new Error('No order received from server.');
+      }
+      
+      if (!quoteId) {
+        console.error('❌ No quoteId in response:', orderData);
+        throw new Error('No quote ID received from server.');
+      }
+      
+      console.log('✅ Order validation passed:', { hasOrder: !!order, quoteId });
+      
+      console.log('🔐 Preparing order for wallet signature...');
+      console.log('📋 Quote ID:', quoteId);
+      
+      // Step 4: Prepare order for signing
+      const orderForSigning = prepareFusionOrderForSigning(order);
+      console.log('📝 Prepared order for signing:', orderForSigning);
+      
+      // Step 5: Sign the order using EIP-712
+      console.log('✍️ Requesting wallet signature...');
+      const signature = await signFusionOrder(
+        walletClient,
+        orderForSigning,
+        chainId,
+        signTypedDataAsync
+      );
+      
+      console.log('✅ Order signed successfully!');
+      console.log('🔐 Signature:', signature.slice(0, 20) + '...');
+      
+      // Step 6: Submit signed order to Fusion resolver network
+      console.log('📤 Submitting signed order...');
+      const submitResult = await submitSignedFusionOrder(
+        order,
+        signature,
+        quoteId,
+        chainId
+      );
+      
+      console.log('🎉 Fusion intent order submitted successfully!');
+      console.log('📝 Order Hash:', submitResult.orderHash);
+      console.log('📈 Status:', submitResult.status);
+      
+      setError(null);
+      
+      // Reset form after successful order creation
       setFromAmount('');
       setToAmount('');
+      setFusionQuote(null);
       
     } catch (err: any) {
-      console.error('Error executing swap:', err);
-      setError(err.message || 'Failed to execute swap. Please try again.');
+      console.error('Error executing Fusion swap:', err);
+      setError(err.message || 'Failed to execute Fusion swap. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [selectedRoute, fromToken, toToken, address, quoteData, fromAmount, chainId, slippage]);
+  }, [fusionQuote, fromToken, toToken, address, fromAmount, chainId]);
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 px-4 sm:px-0">
@@ -311,9 +332,9 @@ export default function UnifiedSwapAggregator() {
         <CardHeader className="pb-6">
           <div className="flex items-center justify-between">
             <CardTitle className="text-xl sm:text-2xl font-light flex items-center gap-2 sm:gap-3">
-              <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
-              <span className="font-extralight tracking-wide">Nexus</span>
-              <span className="font-medium text-muted-foreground hidden sm:inline">Aggregator</span>
+              <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
+              <span className="font-extralight tracking-wide">Fusion</span>
+              <span className="font-medium text-muted-foreground hidden sm:inline">Intent Swap</span>
             </CardTitle>
             <Button 
               variant="ghost" 
@@ -488,78 +509,64 @@ export default function UnifiedSwapAggregator() {
             </div>
           )}
 
-          {/* Route Comparison */}
-          {routes.length > 0 && !error && (
-            <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
-              <Label className="text-base font-medium tracking-wide">Route Comparison</Label>
-              <div className="space-y-3">
-                {routes.map((route, index) => (
-                  <Card 
-                    key={index}
-                    className={`cursor-pointer transition-all duration-300 shadow-sm transform hover:scale-[1.02] active:scale-[0.98] animate-in slide-in-from-left-2 touch-manipulation focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
-                      selectedRoute === route 
-                        ? 'border-primary/60 bg-primary/5 shadow-primary/10 scale-[1.02]' 
-                        : 'border-border/40 hover:border-border/60 hover:shadow-md'
-                    }`}
-                    style={{ animationDelay: `${index * 100}ms` }}
-                    onClick={() => setSelectedRoute(route)}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={selectedRoute === route}
-                    aria-label={`Select ${route.name} route: ${route.dstAmount} ${toToken?.symbol}, gas cost ${route.estimatedGas}`}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedRoute(route);
-                      }
-                    }}
-                  >
-                    <CardContent className="p-5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            {route.protocol === 'fusion' && <Shield className="w-4 h-4 text-green-500" />}
-                            {route.protocol === 'classic' && <Zap className="w-4 h-4 text-blue-500" />}
-                            {route.protocol === 'fusion-plus' && <Globe className="w-4 h-4 text-purple-500" />}
-                            <span className="font-medium">{route.name}</span>
-                          </div>
-                          <div className="flex gap-1">
-                            {route.mevProtection && (
-                              <Badge variant="secondary" className="text-xs">
-                                <Shield className="w-3 h-3 mr-1" />
-                                MEV Protected
-                              </Badge>
-                            )}
-                            {route.gasless && (
-                              <Badge variant="secondary" className="text-xs">
-                                Gas-free
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-medium">{route.dstAmount} {toToken?.symbol}</div>
-                          <div className="text-xs text-muted-foreground">
-                            Gas: {route.estimatedGas} • {route.executionTime}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>Confidence: {route.confidence}%</span>
-                          {route.savings && (
-                            <span className="text-green-600">Save {route.savings}</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          via {route.protocols?.join(', ') || 'Multiple DEXs'}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+          {/* ETH to WETH Notice */}
+          {(fromToken?.address === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || toToken?.address === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg animate-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                  <span className="text-xs text-white font-bold">i</span>
+                </div>
+                <span className="text-sm text-blue-700">
+                  Fusion uses WETH instead of ETH. Your ETH will be automatically handled as WETH for this intent swap.
+                </span>
               </div>
+            </div>
+          )}
+
+          {/* Fusion Quote Display */}
+          {fusionQuote && !error && (
+            <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
+              <Label className="text-base font-medium tracking-wide">1inch Fusion Intent Order</Label>
+              <Card className="border-primary/60 bg-primary/5 shadow-primary/10 shadow-sm">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-green-500" />
+                        <span className="font-medium">Fusion (Intent-Based)</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Badge variant="secondary" className="text-xs">
+                          <Shield className="w-3 h-3 mr-1" />
+                          MEV Protected
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          Gas-free
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          Intent-Based
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{toAmount} {toToken?.symbol}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Gas: Free • ~30-60s
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <span>Quote ID: {fusionQuote.quoteId ? fusionQuote.quoteId.slice(0, 8) + '...' : 'Pending'}</span>
+                      <span className="text-green-600">Save gas fees</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      via Fusion Resolvers Network
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -617,15 +624,15 @@ export default function UnifiedSwapAggregator() {
           {/* Execute Button */}
           <Button 
             onClick={handleExecuteSwap}
-            disabled={!selectedRoute || !isConnected || isLoading || !!error}
-            className="w-full h-12 sm:h-14 text-sm sm:text-base font-medium bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 transition-all duration-300 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none touch-manipulation"
+            disabled={!fusionQuote || !isConnected || isLoading || !!error}
+            className="w-full h-12 sm:h-14 text-sm sm:text-base font-medium bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 transition-all duration-300 shadow-lg shadow-green-600/20 hover:shadow-xl hover:shadow-green-600/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none touch-manipulation"
             size="lg"
           >
             {isLoading ? (
               <div className="flex items-center gap-2">
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span className="font-light tracking-wide">
-                  {routes.length === 0 ? 'Getting Quote...' : 'Executing Swap...'}
+                  {!fusionQuote ? 'Getting Quote...' : 'Creating Intent Order...'}
                 </span>
               </div>
             ) : !isConnected ? (
@@ -636,127 +643,51 @@ export default function UnifiedSwapAggregator() {
               <span className="font-light tracking-wide">Error</span>
             ) : (
               <span className="font-light tracking-wide">
-                Swap via {selectedRoute?.name || 'Route'}
+                Create Fusion Intent Order
               </span>
             )}
           </Button>
         </CardContent>
       </Card>
 
-      {/* Transaction Summary */}
-      {selectedRoute && !error && (
+      {/* Fusion Intent Summary */}
+      {fusionQuote && !error && (
         <Card className="border-border/30 shadow-lg shadow-black/5 bg-gradient-to-br from-card/40 to-card/20">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-medium flex items-center gap-2 tracking-wide">
-              <TrendingUp className="w-5 h-5" />
-              Transaction Summary
+              <Shield className="w-5 h-5" />
+              Fusion Intent Summary
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Route</span>
-              <span className="font-medium">{selectedRoute.name}</span>
+              <span className="text-muted-foreground">Protocol</span>
+              <span className="font-medium">1inch Fusion (Intent-Based)</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Expected Output</span>
-              <span className="font-medium">{selectedRoute.dstAmount} {toToken?.symbol}</span>
+              <span className="font-medium">{toAmount} {toToken?.symbol}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Gas Cost</span>
-              <span className="font-medium">{selectedRoute.estimatedGas}</span>
+              <span className="font-medium text-green-600">Free (Gasless)</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Execution Time</span>
-              <span className="font-medium">{selectedRoute.executionTime}</span>
+              <span className="font-medium">~30-60 seconds</span>
             </div>
-            {selectedRoute.savings && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">You Save</span>
-                <span className="font-medium text-green-600">{selectedRoute.savings}</span>
-              </div>
-            )}
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">MEV Protection</span>
+              <span className="font-medium text-green-600">✓ Protected</span>
+            </div>
             <div className="pt-2 border-t border-border/50">
               <div className="flex justify-between text-sm font-medium">
                 <span>Minimum Received</span>
                 <span>
-                  {(parseFloat(selectedRoute.dstAmount) * (1 - parseFloat(slippage) / 100)).toFixed(6)} {toToken?.symbol}
+                  {(parseFloat(toAmount) * (1 - parseFloat(slippage) / 100)).toFixed(6)} {toToken?.symbol}
                 </span>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Protocol Flow Diagram */}
-      {quoteData && selectedRoute?.protocol === 'classic' && (
-        <Card className="border-border/30 shadow-lg shadow-black/5 bg-gradient-to-br from-card/30 to-card/10">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-medium flex items-center gap-2 tracking-wide">
-                <Globe className="w-5 h-5" />
-                Routing Flow Diagram
-              </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowProtocolDiagram(!showProtocolDiagram)}
-                className="text-xs transition-all duration-200 hover:bg-primary/10"
-              >
-                <span className="transition-all duration-200">
-                  {showProtocolDiagram ? 'Hide Details' : 'Show Details'}
-                </span>
-                <ChevronDown className={`w-3 h-3 ml-1 transition-transform duration-300 ${showProtocolDiagram ? 'rotate-180' : ''}`} />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {!showProtocolDiagram ? (
-              <div className="text-center py-4">
-                <div className="text-sm text-muted-foreground mb-2">
-                  Swap routes through {quoteData.protocols.flat(2).length} protocols across {quoteData.protocols.length} path{quoteData.protocols.length > 1 ? 's' : ''}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Click "Show Details" to view the routing diagram
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="text-xs text-muted-foreground mb-4">
-                  <strong>1inch Pathfinder Algorithm:</strong> Your swap is intelligently split across {quoteData.protocols.length} routing path{quoteData.protocols.length > 1 ? 's' : ''} for optimal pricing
-                </div>
-                
-                {/* React Flow Diagram */}
-                <ProtocolFlowDiagram
-                  quoteData={quoteData}
-                  fromToken={fromToken!}
-                  toToken={toToken!}
-                  fromAmount={fromAmount}
-                  toAmount={selectedRoute.dstAmount}
-                />
-                
-                {/* Summary Stats */}
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border/50">
-                  <div className="text-center">
-                    <div className="text-xs text-muted-foreground">Total Protocols</div>
-                    <div className="text-sm font-medium">
-                      {quoteData.protocols.flat(2).length}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xs text-muted-foreground">Routing Paths</div>
-                    <div className="text-sm font-medium">
-                      {quoteData.protocols.length}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xs text-muted-foreground">Gas Estimate</div>
-                    <div className="text-sm font-medium">
-                      {quoteData.gas.toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}

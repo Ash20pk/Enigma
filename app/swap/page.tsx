@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { WalletConnect } from '@/components/wallet-connect';
-import UnifiedSwapAggregator from '@/components/unified-swap-aggregator';
+import FusionSwapAggregator from '@/components/fusion-swap-aggregator';
 import { Zap, Settings, BarChart3, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -42,7 +42,7 @@ export default function SwapPage() {
                 <h1 className="text-2xl font-bold text-foreground">
                   Nexus
                 </h1>
-                <p className="text-xs text-muted-foreground">DeFi Aggregator</p>
+                <p className="text-xs text-muted-foreground">Fusion Intent Swaps</p>
               </div>
             </div>
             
@@ -81,7 +81,7 @@ export default function SwapPage() {
 
           <TabsContent value="swap" className="space-y-6">
             <div className="max-w-2xl mx-auto">
-              <UnifiedSwapAggregator />
+              <FusionSwapAggregator />
             </div>
           </TabsContent>
 

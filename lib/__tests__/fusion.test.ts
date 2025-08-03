@@ -51,21 +51,21 @@ describe('FusionService', () => {
   describe('getQuote', () => {
     it('should get quote for same-chain swap', async () => {
       const mockQuote = {
-        dstAmount: '1000000',
-        srcToken: {
-          address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-          symbol: 'ETH',
-          name: 'Ethereum',
-          decimals: 18,
+        presets: {
+          fast: {
+            auctionStartAmount: BigInt(1000000),
+            auctionEndAmount: BigInt(990000),
+            auctionDuration: BigInt(180),
+            startAuctionIn: BigInt(24),
+            bankFee: BigInt(0),
+            tokenFee: BigInt(1000),
+            initialRateBump: 50000,
+            allowPartialFills: true,
+            allowMultipleFills: true,
+          }
         },
-        dstToken: {
-          address: '0xA0b86991c6218a36c1d19D4a2e9Eb0cE3606eB48',
-          symbol: 'USDC',
-          name: 'USD Coin',
-          decimals: 6,
-        },
-        gas: 150000,
-        quoteId: 'quote-123',
+        recommendedPreset: 'fast',
+        quoteId: null, // Fusion SDK returns null for quotes
       }
 
       mockSDK.getQuote.mockResolvedValueOnce(mockQuote)
@@ -87,10 +87,33 @@ describe('FusionService', () => {
 
       expect(result).toEqual({
         dstAmount: '1000000',
-        srcToken: mockQuote.srcToken,
-        dstToken: mockQuote.dstToken,
-        gas: 150000,
-        quoteId: 'quote-123',
+        srcToken: {
+          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH conversion
+          symbol: 'WETH',
+          name: 'Wrapped Ether',
+          decimals: 18,
+        },
+        dstToken: {
+          address: '0xA0b86991c6218a36c1d19D4a2e9Eb0cE3606eB48',
+          symbol: 'TOKEN',
+          name: 'Token',
+          decimals: 18,
+        },
+        presets: {
+          fast: {
+            auctionStartAmount: '1000000',
+            auctionEndAmount: '990000',
+            auctionDuration: '180',
+            startAuctionIn: '24',
+            bankFee: '0',
+            tokenFee: '1000',
+            initialRateBump: 50000,
+            allowPartialFills: true,
+            allowMultipleFills: true,
+          }
+        },
+        recommendedPreset: 'fast',
+        quoteId: null,
         isCrossChain: false,
       })
     })

@@ -6,45 +6,57 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { 
       chainId = 1,
-      src,
-      dst,
+      fromTokenAddress,
+      toTokenAddress,
       amount,
-      from,
+      walletAddress,
       receiver,
       permit,
-      dstChainId
+      dstChainId,
+      // Legacy parameter names for backward compatibility
+      src,
+      dst,
+      from
     } = body;
 
-    if (!src || !dst || !amount || !from) {
+    // Use new parameter names or fall back to legacy ones
+    const srcToken = fromTokenAddress || src;
+    const dstToken = toTokenAddress || dst;
+    const wallet = walletAddress || from;
+
+    if (!srcToken || !dstToken || !amount || !wallet) {
       return NextResponse.json(
-        { error: 'Missing required parameters: src, dst, amount, from' },
+        { error: 'Missing required parameters: fromTokenAddress, toTokenAddress, amount, walletAddress' },
         { status: 400 }
       );
     }
 
     // Create the order
     const orderResponse = await fusionService.createOrder({
-      fromTokenAddress: src,
-      toTokenAddress: dst,
+      fromTokenAddress: srcToken,
+      toTokenAddress: dstToken,
       amount,
-      walletAddress: from,
-      receiver: receiver || from,
+      walletAddress: wallet,
+      receiver: receiver || wallet,
       permit,
       srcChainId: chainId,
       dstChainId,
     });
 
-    // Submit the order
-    const orderHash = await fusionService.submitOrder(
-      orderResponse.order,
-      orderResponse.quoteId,
-      chainId
-    );
-
+    // Return the order for frontend signing (don't submit yet)
+    console.log('Order created successfully, returning for signature');
+    
+    // Convert BigInt values to strings for JSON serialization
+    const serializableOrder = JSON.parse(JSON.stringify(orderResponse.order, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    ));
+    
     return NextResponse.json({
-      orderHash,
-      order: orderResponse.order,
+      success: true,
+      order: serializableOrder,
       quoteId: orderResponse.quoteId,
+      orderHash: '', // Will be set after successful submission
+      message: 'Order created successfully, ready for signing',
     });
   } catch (error: unknown) {
     console.error('Error submitting Fusion order:', error);

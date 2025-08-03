@@ -36,3 +36,34 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { fromTokenAddress, toTokenAddress, amount, walletAddress, chainId, dstChainId } = body;
+
+    if (!fromTokenAddress || !toTokenAddress || !amount || !walletAddress) {
+      return NextResponse.json(
+        { error: 'Missing required parameters: fromTokenAddress, toTokenAddress, amount, walletAddress' },
+        { status: 400 }
+      );
+    }
+
+    const quote = await fusionService.getQuote({
+      fromTokenAddress,
+      toTokenAddress,
+      amount,
+      walletAddress,
+      srcChainId: chainId || 1,
+      dstChainId: dstChainId || undefined,
+    });
+
+    return NextResponse.json(quote);
+  } catch (error: unknown) {
+    console.error('Error fetching Fusion quote:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to fetch Fusion quote' },
+      { status: 500 }
+    );
+  }
+}
