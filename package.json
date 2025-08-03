@@ -1,6 +1,7 @@
 {
-  "name": "hackathon_project",
+  "name": "nexus-defi-platform",
   "version": "0.1.0",
+  "description": "Nexus - The convergence point where all DeFi protocols, chains, and opportunities unite into one optimized experience",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -29,6 +30,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hot-toast": "^2.4.1",
+    "reactflow": "^11.11.4",
     "recharts": "^2.8.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",

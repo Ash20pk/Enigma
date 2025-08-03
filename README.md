@@ -1,14 +1,60 @@
-# 1inch DEX - Advanced DeFi Trading Platform
+# 🚀 Nexus - The Ultimate DeFi Trading Platform
 
-A comprehensive decentralized exchange (DEX) built with Next.js, TypeScript, and powered by the 1inch API. This dApp provides advanced trading functionality, portfolio management, and multi-chain support.
+**The convergence point where all DeFi protocols, chains, and opportunities unite into one optimized experience.**
 
-## ✨ Features
+Nexus is a comprehensive DeFi trading platform that maximizes every aspect of the 1inch protocol suite, providing intelligent trade routing, cross-chain arbitrage, MEV protection, and advanced portfolio management.
 
-### 🔄 Advanced Swap Functionality
-- **Best Rates**: Aggregated liquidity across multiple DEXs
-- **Multi-Chain Support**: Ethereum, Polygon, Arbitrum, Optimism, Base
-- **Gas Optimization**: Minimized transaction costs
-- **Slippage Protection**: Customizable slippage tolerance
+## 🎯 Problem Solved
+
+DeFi traders are fragmented across multiple platforms, protocols, and chains, leading to:
+- **$2.1B in annual inefficient execution** costs
+- **$500M+ lost to MEV** attacks
+- **78% of traders** using suboptimal execution methods
+- **Missed arbitrage opportunities** due to manual cross-chain execution
+
+## ✨ Key Features
+
+### 🧠 **Intelligent Trade Router**
+- **AI-Powered Protocol Selection**: Automatically chooses between Classic, Fusion, Fusion+, and Limit Orders
+- **Real-time Comparison**: Side-by-side analysis of all execution methods
+- **MEV Protection by Default**: Routes through Fusion when MEV risk is detected
+- **Gas Optimization**: Smart routing based on trade size and market conditions
+
+### 🔄 **Cross-Chain Arbitrage Scanner**
+- **Real-time Opportunity Detection**: Scans price differences across all 5 supported chains
+- **One-Click Execution**: Execute arbitrage trades using Fusion+ (bridge-free)
+- **Confidence Scoring**: AI-powered risk assessment for each opportunity
+- **Auto-scanning**: Continuous monitoring with 30-second intervals
+
+### 🛡️ **MEV Protection Dashboard**
+- **Comprehensive Protection**: Sandwich attack, frontrunning, and backrunning prevention
+- **Real-time Alerts**: Live monitoring of MEV attempts and blocks
+- **Savings Tracking**: Track total USD saved from MEV protection
+- **Private Mempool**: Transactions hidden from public mempool
+
+### 📊 **Advanced Portfolio Management**
+- **Multi-Chain Portfolio**: Unified view across all supported chains
+- **Auto-Rebalancing**: Maintain target allocations using Fusion+
+- **Limit Order Engine**: Set complex conditional orders across chains
+- **P&L Analytics**: Detailed profit/loss tracking with protocol performance
+
+## 🔧 Technical Architecture
+
+### **Complete 1inch API Integration**
+- ✅ **Classic Swap Protocol (v6.0)**: Quote, Swap, Tokens, Allowance, Approve
+- ✅ **Fusion Protocol (v1.0)**: Intent-based swaps with MEV protection
+- ✅ **Fusion+ Protocol (v1.0)**: Bridge-free cross-chain swaps
+- ✅ **Limit Order Protocol (v4.0)**: Advanced order management
+- ✅ **Portfolio API (v4.0)**: Multi-chain balance tracking
+- ✅ **Price Feeds API**: Real-time token prices
+
+### **Tech Stack**
+- **Frontend**: Next.js 15, React 19, TypeScript
+- **Styling**: Tailwind CSS v3, shadcn/ui components, Glassmorphism design
+- **Web3**: Wagmi, Viem for wallet connections and blockchain interactions
+- **State Management**: TanStack Query for API state management
+- **Charts**: Recharts for data visualization
+- **API Layer**: Next.js API routes with Bearer token authentication
 - **Real-time Quotes**: Live price updates and route optimization
 
 ### 📊 Portfolio Management

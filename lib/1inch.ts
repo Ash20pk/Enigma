@@ -6,15 +6,24 @@ export interface Token {
   name: string;
   decimals: number;
   logoURI?: string;
+  eip2612?: boolean;
+  isFoT?: boolean;
+  tags?: string[];
+}
+
+export interface Protocol {
+  name: string;
+  part: number;
+  fromTokenAddress: string;
+  toTokenAddress: string;
 }
 
 export interface QuoteResponse {
   dstAmount: string;
   srcToken: Token;
   dstToken: Token;
-  protocols: any[];
-  gas: string;
-  estimatedGas: string;
+  protocols: Protocol[][][];
+  gas: number;
 }
 
 export interface SwapResponse extends QuoteResponse {
