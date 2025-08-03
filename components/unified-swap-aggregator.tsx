@@ -1,24 +1,22 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useChainId, useBalance } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   ArrowDownUp, 
   Zap, 
   Globe, 
   TrendingUp, 
   Shield, 
-  Clock, 
   Settings,
   ChevronDown,
   AlertTriangle,
-  CheckCircle,
   Loader2
 } from 'lucide-react';
 import { Token, QuoteResponse, oneInchService } from '@/lib/1inch';
@@ -263,16 +261,23 @@ export default function UnifiedSwapAggregator() {
       const amountInWei = (parseFloat(fromAmount) * Math.pow(10, fromToken.decimals)).toString();
       
       if (selectedRoute.protocol === 'fusion') {
-        // Use Fusion API for MEV-protected swaps
-        const fusionOrder = await oneInchService.getFusionQuote(
-          chainId,
-          fromToken.address,
-          toToken.address,
-          amountInWei,
-          address
-        );
+        // Use Fusion SDK for MEV-protected swaps
+        const { fusionService } = await import('@/lib/fusion');
+        const fusionOrder = await fusionService.createOrder({
+          fromTokenAddress: fromToken.address,
+          toTokenAddress: toToken.address,
+          amount: amountInWei,
+          walletAddress: address,
+        });
         console.log('Fusion order created:', fusionOrder);
-        // Here you would submit the order to the Fusion network
+        
+        // Submit the order
+        const orderHash = await fusionService.submitOrder(
+          fusionOrder.order,
+          fusionOrder.quoteId,
+          chainId
+        );
+        console.log('Fusion order submitted:', orderHash);
       } else {
         // Use classic swap
         const swapData = await oneInchService.getSwap(

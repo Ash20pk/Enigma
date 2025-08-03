@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { TrendingUp, TrendingDown, Wallet, DollarSign, BarChart3, Activity } from 'lucide-react';
 import { useAccount } from 'wagmi';

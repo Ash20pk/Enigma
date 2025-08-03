@@ -259,8 +259,9 @@ class OneInchService {
     }
   }
 
-  // Fusion+ (Cross-chain) APIs
-  async getFusionPlusQuote(
+  // Cross-chain functionality now available through Fusion SDK
+  // Use fusionService from @/lib/fusion for cross-chain operations
+  async getCrossChainQuote(
     srcChainId: number,
     dstChainId: number,
     src: string,
@@ -268,17 +269,19 @@ class OneInchService {
     amount: string,
     from: string
   ): Promise<any> {
-    try {
-      return await this.makeRequest(
-        `${this.baseURL}/fusion-plus/quote?srcChainId=${srcChainId}&dstChainId=${dstChainId}&src=${src}&dst=${dst}&amount=${amount}&from=${from}`
-      );
-    } catch (error) {
-      console.error('Error fetching Fusion+ quote:', error);
-      throw new Error('Unable to get cross-chain quote. Please check your parameters.');
-    }
+    // Redirect to fusion service for cross-chain operations
+    const { fusionService } = await import('./fusion');
+    return await fusionService.getQuote({
+      fromTokenAddress: src,
+      toTokenAddress: dst,
+      amount,
+      walletAddress: from,
+      srcChainId,
+      dstChainId,
+    });
   }
 
-  async submitFusionPlusOrder(
+  async submitCrossChainOrder(
     orderData: {
       srcChainId: number;
       dstChainId: number;
@@ -287,27 +290,21 @@ class OneInchService {
       amount: string;
       from: string;
       receiver?: string;
-      preset?: string;
       permit?: string;
-      interactions?: any;
     }
   ): Promise<any> {
-    try {
-      const response = await axios.post(
-        `${this.baseURL}/fusion-plus/swap`,
-        orderData,
-        {
-          timeout: this.requestTimeout,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error submitting Fusion+ order:', error);
-      throw new Error('Failed to submit cross-chain order. Please try again.');
-    }
+    // Redirect to fusion service for cross-chain operations
+    const { fusionService } = await import('./fusion');
+    return await fusionService.createOrder({
+      fromTokenAddress: orderData.src,
+      toTokenAddress: orderData.dst,
+      amount: orderData.amount,
+      walletAddress: orderData.from,
+      receiver: orderData.receiver,
+      permit: orderData.permit,
+      srcChainId: orderData.srcChainId,
+      dstChainId: orderData.dstChainId,
+    });
   }
 
   // Limit Order Protocol APIs
@@ -380,7 +377,11 @@ class OneInchService {
   }
 
   formatAmount(amount: string, decimals: number): string {
-    return (BigInt(amount) * BigInt(10 ** decimals)).toString();
+    // Convert decimal amount to BigInt-compatible string
+    const [whole, decimal = ''] = amount.split('.');
+    const paddedDecimal = decimal.padEnd(decimals, '0').slice(0, decimals);
+    const fullAmountString = whole + paddedDecimal;
+    return BigInt(fullAmountString).toString();
   }
 
   parseAmount(amount: string, decimals: number): string {

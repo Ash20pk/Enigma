@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const ONEINCH_API_URL = 'https://api.1inch.dev';
-const API_KEY = process.env.ONEINCH_API_KEY || '';
+import { fusionService } from '@/lib/fusion';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { 
-      chainId = '1',
+      chainId = 1,
       src,
       dst,
       amount,
       from,
       receiver,
-      preset = 'fast',
-      source,
       permit,
-      interactions
+      dstChainId
     } = body;
 
     if (!src || !dst || !amount || !from) {
@@ -26,41 +22,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const requestBody = {
-      src,
-      dst,
+    // Create the order
+    const orderResponse = await fusionService.createOrder({
+      fromTokenAddress: src,
+      toTokenAddress: dst,
       amount,
-      from,
+      walletAddress: from,
       receiver: receiver || from,
-      preset,
-      ...(source && { source }),
-      ...(permit && { permit }),
-      ...(interactions && { interactions }),
-    };
+      permit,
+      srcChainId: chainId,
+      dstChainId,
+    });
 
-    const response = await fetch(
-      `${ONEINCH_API_URL}/fusion/relayer/v1.0/${chainId}/order/submit`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'accept': 'application/json',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      }
+    // Submit the order
+    const orderHash = await fusionService.submitOrder(
+      orderResponse.order,
+      orderResponse.quoteId,
+      chainId
     );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error) {
+    return NextResponse.json({
+      orderHash,
+      order: orderResponse.order,
+      quoteId: orderResponse.quoteId,
+    });
+  } catch (error: unknown) {
     console.error('Error submitting Fusion order:', error);
     return NextResponse.json(
-      { error: 'Failed to submit Fusion order' },
+      { error: error instanceof Error ? error.message : 'Failed to submit Fusion order' },
       { status: 500 }
     );
   }

@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const ONEINCH_API_URL = 'https://api.1inch.dev';
-const API_KEY = process.env.ONEINCH_API_KEY || '';
+import { fusionService } from '@/lib/fusion';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const chainId = searchParams.get('chainId') || '1';
+  const chainId = parseInt(searchParams.get('chainId') || '1');
   const src = searchParams.get('src');
   const dst = searchParams.get('dst');
   const amount = searchParams.get('amount');
   const from = searchParams.get('from');
+  const dstChainId = searchParams.get('dstChainId');
 
   if (!src || !dst || !amount || !from) {
     return NextResponse.json(
@@ -19,36 +18,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const params = new URLSearchParams({
-      src,
-      dst,
+    const quote = await fusionService.getQuote({
+      fromTokenAddress: src,
+      toTokenAddress: dst,
       amount,
-      from,
-      enableEstimate: 'true',
-      includeTokensInfo: 'true',
-      includeProtocols: 'true',
+      walletAddress: from,
+      srcChainId: chainId,
+      dstChainId: dstChainId ? parseInt(dstChainId) : undefined,
     });
 
-    const response = await fetch(
-      `${ONEINCH_API_URL}/fusion/quoter/v1.0/${chainId}/quote/receive?${params}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'accept': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
-  } catch (error) {
+    return NextResponse.json(quote);
+  } catch (error: unknown) {
     console.error('Error fetching Fusion quote:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch Fusion quote' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch Fusion quote' },
       { status: 500 }
     );
   }
